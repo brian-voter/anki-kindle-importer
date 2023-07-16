@@ -1,51 +1,51 @@
 import os
+from typing import Optional
 
-from anki.hooks import wrap
-
-from PyQt5.QtWidgets import QAction, QListWidget, QDialog, QHBoxLayout, QFileDialog, QMessageBox, QErrorMessage, \
+import aqt
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QListWidget, QDialog, QHBoxLayout, QFileDialog, QMessageBox, QErrorMessage, \
     QApplication, QLabel, QBoxLayout
-
 from anki.lang import _
+from aqt import mw, gui_hooks, qconnect
+from aqt.editor import Editor
 from aqt.reviewer import Reviewer
 from aqt.utils import tooltip
-from aqt.addcards import AddCards
-
-from aqt import mw
 
 Highlights = list()
 Imported = False
-Addcards_dialog = None
+Add_cards_editor: Optional[Editor] = None
 OldRevHTML = Reviewer.revHtml
 MainList = None
 
 IndexLabel = None
 
-####   CONFIG   ####
+# ----- CONFIG -----
 Config = None
 
 Kindle_file = ""
 Snippets_file = ""
-Show_list_key = 75
+# Show_list_key = 75
 Truncate_length = 300
 Insert_fields = [0]
 Copy_to_clipboard = False
-#### END CONFIG ####
+
+
+# ----- END CONFIG -----
 
 
 def read_config():
-    global Config, Kindle_file, Show_list_key, Truncate_length, Insert_fields, Copy_to_clipboard, Snippets_file
+    global Config, Kindle_file, Truncate_length, Insert_fields, Copy_to_clipboard, Snippets_file
 
     Config = mw.addonManager.getConfig(__name__)
     if Config is not None:
         Kindle_file = Config["Kindle Clippings File"]
         Snippets_file = Config["Snippets File"]
-        Show_list_key = Config["Insert Clippings Shortcut"]
         Truncate_length = Config["Max Clippings To Import"]
         Insert_fields = Config["Insert Clipping Into Fields"]
         Copy_to_clipboard = Config["Copy Clipping To Clipboard"]
 
 
-def snippet_import():
+def import_snippets():
     global Highlights, Imported
 
     if Snippets_file == "":
@@ -80,9 +80,10 @@ def snippet_import():
     Imported = True
 
 
-def kindle_import():
+def import_clippings():
     if Kindle_file == "":
-        input_kindle_file_path()
+        if not input_clippings_file_path():
+            return
 
     tooltip(_("Importing Kindle Clippings..."), period=1000)
 
@@ -118,49 +119,42 @@ def kindle_import():
 
 
 def insert_highlight_text(text):
-
     if len(Insert_fields) > 0:
-        note = Addcards_dialog.editor.note
+        note = Add_cards_editor.note
         for f in Insert_fields:
             note.fields[f] = text
-        Addcards_dialog.setAndFocusNote(note)
+        # Add_cards_editor.focus
+        Add_cards_editor.set_note(note, focusTo=Insert_fields[-1])
 
 
-def custom_key_press(caller, evt):
-    global Addcards_dialog, MainList, IndexLabel
+def show_clippings_importer(arg0):
+    global Add_cards_editor, MainList, IndexLabel
 
-    if evt.key() == Show_list_key:
+    if not Imported:
+        tooltip(_("Error: No Highlights Imported"), period=3000)
+        return
 
-        if not Imported:
-            tooltip(_("Error: No Highlights Imported"), period=2000)
-            evt.accept()
-            return
+    d = QDialog(Add_cards_editor.widget)
+    d.setWindowTitle("Kindle Clippings Importer")
+    d.resize(400, 800)
 
-        Addcards_dialog = caller
+    MainList = QListWidget()
+    MainList.addItems(Highlights)
+    MainList.itemDoubleClicked.connect(item_double_clicked)
+    MainList.itemSelectionChanged.connect(item_selected)
+    MainList.setStyleSheet("background-color: color(105,105,105);")
 
-        d = QDialog(Addcards_dialog)
-        d.setWindowTitle("Kindle Clippings Importer")
-        d.resize(400, 800)
+    layout = QHBoxLayout()
+    layout.setDirection(QBoxLayout.Direction.Down)
+    layout.addWidget(QLabel("Double click a clipping below to import it."))
+    layout.addWidget(MainList)
 
-        MainList = QListWidget()
-        MainList.addItems(Highlights)
-        MainList.itemDoubleClicked.connect(item_double_clicked)
-        MainList.itemSelectionChanged.connect(item_selected)
-        MainList.setStyleSheet("background-color: gray")
+    IndexLabel = QLabel()
+    layout.addWidget(IndexLabel)
+    item_selected()
 
-        layout = QHBoxLayout()
-        layout.setDirection(QBoxLayout.Down)
-        layout.addWidget(QLabel("Double click a clipping below to import it."))
-        layout.addWidget(MainList)
-
-        IndexLabel = QLabel()
-        layout.addWidget(IndexLabel)
-        item_selected()
-
-        d.setLayout(layout)
-        d.show()
-
-        evt.accept()
+    d.setLayout(layout)
+    d.show()
 
 
 def item_double_clicked(item):
@@ -171,7 +165,7 @@ def item_double_clicked(item):
         QApplication.clipboard().setText(text)
 
 
-def item_selected(item = None):
+def item_selected(item=None):
     IndexLabel.setText("Selected Item Index: " + str(MainList.currentIndex().row() + 1))
 
 
@@ -180,9 +174,9 @@ def input_snippets_file_path():
 
     ok = QMessageBox.information(mw, "Clippings Importer",
                                  "In the next dialog, please input your Snippets file path.",
-                                 QMessageBox.Ok, QMessageBox.Cancel)
+                                 QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.Cancel)
 
-    if ok == QMessageBox.Ok:
+    if ok == QMessageBox.StandardButton.Ok:
 
         file, x = QFileDialog.getOpenFileName(mw, caption="Snippets File", filter="Text files (*.txt)")
         if file:
@@ -192,19 +186,22 @@ def input_snippets_file_path():
                 Config = {"Snippets File": Snippets_file}
             Config["Snippets File"] = Snippets_file
             mw.addonManager.writeConfig(__name__, Config)
+            return True
         else:
             tooltip(_("Operation Aborted."), period=4000)
 
+    return False
 
-def input_kindle_file_path():
+
+def input_clippings_file_path():
     global Kindle_file, Config
 
     ok = QMessageBox.information(mw, "Clippings Importer",
                                  "In the next dialog, please input your Kindle clippings file path. The file "
                                  "can be found on your Kindle device as '<kindle root>/documents/My Clippings.txt'",
-                                 QMessageBox.Ok, QMessageBox.Cancel)
+                                 QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.Cancel)
 
-    if ok == QMessageBox.Ok:
+    if ok == QMessageBox.StandardButton.Ok:
 
         file, x = QFileDialog.getOpenFileName(mw, caption="Kindle Clippings File", filter="Text files (*.txt)")
         if file:
@@ -214,27 +211,49 @@ def input_kindle_file_path():
                 Config = {"Kindle Clippings File": Kindle_file}
             Config["Kindle Clippings File"] = Kindle_file
             mw.addonManager.writeConfig(__name__, Config)
+            return True
         else:
             tooltip(_("Operation Aborted."), period=4000)
+
+    return False
 
 
 def build_menu():
     menu = mw.form.menuTools.addMenu("Clippings Importer")
     import_snippets_action = QAction("Import Snippets", mw)
-    import_snippets_action.triggered.connect(snippet_import)
+    qconnect(import_snippets_action.triggered, import_snippets)
     menu.addAction(import_snippets_action)
-    import_kindle_action = QAction("Import Kindle Clippings", mw)
-    import_kindle_action.triggered.connect(kindle_import)
-    menu.addAction(import_kindle_action)
-    input_file_path = QAction("Select Kindle Clippings File", mw)
-    input_file_path.triggered.connect(input_kindle_file_path)
-    menu.addAction(input_file_path)
-    input_snippets_path = QAction("Select Snippets File", mw)
-    input_snippets_path.triggered.connect(input_snippets_file_path)
-    menu.addAction(input_snippets_path)
 
-# TODO: improve:
-AddCards.keyPressEvent = wrap(AddCards.keyPressEvent, custom_key_press, "before")
+    import_clippings_action = QAction("Import Kindle Clippings", mw)
+    qconnect(import_clippings_action.triggered, import_clippings)
+    menu.addAction(import_clippings_action)
+
+    input_clippings_path_action = QAction("Select Kindle Clippings File", mw)
+    qconnect(input_clippings_path_action.triggered, input_clippings_file_path)
+    menu.addAction(input_clippings_path_action)
+
+    input_snippets_path_action = QAction("Select Snippets File", mw)
+    qconnect(input_snippets_path_action.triggered, input_snippets_file_path)
+    menu.addAction(input_snippets_path_action)
+
+
+def setup_buttons(buttons, editor: Editor):
+    global Add_cards_editor
+
+    Add_cards_editor = editor
+
+    btn = editor.addButton(None,
+                           'K.I.',
+                           show_clippings_importer,
+                           tip='Import clippings from kindle')
+    buttons.append(btn)
+
+
+# def on_editor_init(editor: Editor):
+#     editor.widget
+
+gui_hooks.editor_did_init_buttons.append(setup_buttons)
+# gui_hooks.editor_did_init.append(on_editor_init)
 
 read_config()
 build_menu()
