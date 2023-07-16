@@ -2,5 +2,7 @@
   "Kindle Clippings File": "",
   "Max Clippings To Import": 300,
   "Insert Clipping Into Fields": [0],
-  "Copy Clipping To Clipboard": false
+  "Copy Clipping To Clipboard": false,
+  "Import Dialog Size": [400, 600],
+  "Import Dialog Position": [100, 100]
 }

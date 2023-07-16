@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Any
 
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QListWidget, QDialog, QHBoxLayout, QFileDialog, QMessageBox, QErrorMessage, \
@@ -21,19 +21,21 @@ IndexLabel: Optional[QLabel] = None
 
 # ----- CONFIG -----
 
-Config = None
+Config: Optional[dict[str, Any]] = None
 
 Kindle_file = ""
 # Show_list_key = 75
 Truncate_length = 300
 Insert_fields = [0]
 Copy_to_clipboard = False
+Import_dialog_size = [400, 600]
+Import_dialog_position = [100, 100]
 
 # ----- END CONFIG -----
 
 
 def read_config():
-    global Config, Kindle_file, Truncate_length, Insert_fields, Copy_to_clipboard
+    global Config, Kindle_file, Truncate_length, Insert_fields, Copy_to_clipboard, Import_dialog_size, Import_dialog_position
 
     Config = mw.addonManager.getConfig(__name__)
     if Config is not None:
@@ -41,6 +43,8 @@ def read_config():
         Truncate_length = Config["Max Clippings To Import"]
         Insert_fields = Config["Insert Clipping Into Fields"]
         Copy_to_clipboard = Config["Copy Clipping To Clipboard"]
+        Import_dialog_size = Config["Import Dialog Size"]
+        Import_dialog_position = Config["Import Dialog Position"]
 
 
 def import_clippings():
@@ -90,7 +94,21 @@ def insert_highlight_text(text):
         Add_cards_editor.set_note(note, focusTo=Insert_fields[-1])
 
 
-def show_clippings_importer(_):
+def save_dialog_appearance(dialog: QDialog):
+    global Import_dialog_size, Import_dialog_position
+
+    position = dialog.pos()
+    Import_dialog_position = [position.x(), position.y()]
+    Config["Import Dialog Position"] = Import_dialog_position
+
+    size = dialog.size()
+    Import_dialog_size = [size.width(), size.height()]
+    Config["Import Dialog Size"] = Import_dialog_size
+
+    mw.addonManager.writeConfig(__name__, Config)
+
+
+def show_clippings_importer(_arg0):
     global Add_cards_editor, MainList, IndexLabel
 
     if not import_clippings():
@@ -98,7 +116,8 @@ def show_clippings_importer(_):
 
     d = QDialog(Add_cards_editor.widget)
     d.setWindowTitle("Kindle Clippings Importer")
-    d.resize(400, 800)
+    d.resize(Import_dialog_size[0], Import_dialog_size[1])
+    d.move(Import_dialog_position[0], Import_dialog_position[1])
 
     MainList = QListWidget()
     MainList.addItems(Highlights)
@@ -119,6 +138,11 @@ def show_clippings_importer(_):
     d.setLayout(layout)
     d.show()
 
+    def on_importer_close():
+        save_dialog_appearance(d)
+
+    qconnect(d.finished, on_importer_close)
+
 
 def on_item_double_clicked(item):
     text = item.text()
@@ -128,7 +152,7 @@ def on_item_double_clicked(item):
         QApplication.clipboard().setText(text)
 
 
-def on_item_selected(_=None):
+def on_item_selected(_arg0=None):
     IndexLabel.setText("Selected Item Index: " + str(MainList.currentIndex().row() + 1))
 
 
