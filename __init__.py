@@ -1,7 +1,6 @@
 import os
 from typing import Optional
 
-import aqt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QListWidget, QDialog, QHBoxLayout, QFileDialog, QMessageBox, QErrorMessage, \
     QApplication, QLabel, QBoxLayout
@@ -15,9 +14,9 @@ Highlights = list()
 Imported = False
 Add_cards_editor: Optional[Editor] = None
 OldRevHTML = Reviewer.revHtml
-MainList = None
+MainList: Optional[QListWidget] = None
 
-IndexLabel = None
+IndexLabel: Optional[QLabel] = None
 
 # ----- CONFIG -----
 Config = None
@@ -59,13 +58,13 @@ def import_snippets():
 
     Highlights = list()
 
-    with open(Snippets_file, 'r', encoding="utf-8") as kfile:
-        for line in kfile:
+    with open(Snippets_file, 'r', encoding="utf-8") as snippets_file:
+        for line in snippets_file:
             stripped = line.strip().replace("\n", "")
             if not (stripped.startswith("-------") or stripped == ""):
                 Highlights.append(stripped)
 
-    kfile.close()
+    snippets_file.close()
 
     if len(Highlights) == 0:
         QErrorMessage(mw).showMessage("Error: No clippings were imported. Did you select the correct file?")
@@ -94,8 +93,8 @@ def import_clippings():
         return
 
     Highlights = list()
-    with open(Kindle_file, 'r', encoding="utf-8") as kfile:
-        lines = kfile.readlines()
+    with open(Kindle_file, 'r', encoding="utf-8") as clippings_file:
+        lines = clippings_file.readlines()
 
         for i in range(1, len(lines)):
             prev_line = lines[i - 1]
@@ -103,7 +102,7 @@ def import_clippings():
             if cur_line.strip() == "==========":
                 Highlights.insert(0, prev_line)
 
-    kfile.close()
+    clippings_file.close()
 
     if len(Highlights) == 0:
         QErrorMessage(mw).showMessage("Error: No clippings were imported. Did you select the correct file?")
@@ -127,7 +126,7 @@ def insert_highlight_text(text):
         Add_cards_editor.set_note(note, focusTo=Insert_fields[-1])
 
 
-def show_clippings_importer(arg0):
+def show_clippings_importer(_):
     global Add_cards_editor, MainList, IndexLabel
 
     if not Imported:
@@ -140,8 +139,9 @@ def show_clippings_importer(arg0):
 
     MainList = QListWidget()
     MainList.addItems(Highlights)
-    MainList.itemDoubleClicked.connect(item_double_clicked)
-    MainList.itemSelectionChanged.connect(item_selected)
+    qconnect(MainList.itemDoubleClicked, on_item_double_clicked)
+
+    qconnect(MainList.itemSelectionChanged, on_item_selected)
     MainList.setStyleSheet("background-color: color(105,105,105);")
 
     layout = QHBoxLayout()
@@ -151,13 +151,13 @@ def show_clippings_importer(arg0):
 
     IndexLabel = QLabel()
     layout.addWidget(IndexLabel)
-    item_selected()
+    on_item_selected()
 
     d.setLayout(layout)
     d.show()
 
 
-def item_double_clicked(item):
+def on_item_double_clicked(item):
     text = item.text()
     insert_highlight_text(text)
 
@@ -165,7 +165,7 @@ def item_double_clicked(item):
         QApplication.clipboard().setText(text)
 
 
-def item_selected(item=None):
+def on_item_selected(_=None):
     IndexLabel.setText("Selected Item Index: " + str(MainList.currentIndex().row() + 1))
 
 
